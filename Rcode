@@ -1,0 +1,1019 @@
+
+# R code for the paper: 
+#Ledo et al (2016 ) Re-evaluation of individual diameter:height allometric models to improve biomass estimation of tropical trees
+#Ecological applications, 26(8):2374–2380
+
+#CONTAINS:
+
+#  1.Read the data
+#  2.Split data in 2 groups: fitting and validation
+#  3.Fit distribution models to data
+#  4.Height calculation using fitted equations – errors, bias and RMSE calculation
+#  5.Above ground biomass (AGB) calculation using fitted equations – errors, bias and RMSE calculation
+#  6.Errors in AGB estimation in plots 20x20m
+
+#The code for creating the figures of the manuscript is also included
+
+#################################################################
+
+
+
+#for contacting: alicialedo@gmail.com
+
+
+
+
+#1. Read the data
+####################
+
+height<-read.table('Treeheight.txt',h=T) 
+#the "Treeheight.txt" dataset has 4 columns: TreeID, Species, DBH and H
+
+
+#2. Split data in 2 groups: fitting and validation
+###############################################
+ 
+heightall<-height
+
+#split the data into 2 groups
+Rand<-sample(1:dim(height),(dim(height)/2),replace=F)
+sort(Rand)
+
+#select random trees
+heightall$Num<-1:dim(height)
+heightall$Selec<-match(heightall$Num,Rand)
+
+#trees to fit equation
+treesfit<-subset(heightall, heightall$Selec>0,drop=T)
+#
+#trees to validate
+treesval<-subset(heightall, is.na(heightall$Selec))
+
+treesfit<-treesfit[,-4] #remove auxiliar columns
+treesfit<-treesfit[,-4] 
+treesval<-treesval[,-4]  
+treesval<-treesval[,-4] 
+
+
+
+##################################################################
+#3. FIT DISTRIBUTION MODELS TO DATA, CALCULATE BIAS AND RMSE
+##################################################################
+
+#1. Linear
+    FITlin<-lm(treesfit$H~treesfit$DBH)
+    Hlin<-function(DBH){
+          coef(FITlin)[[1]]+(coef(FITlin)[[2]]*DBH)
+    }
+    treesfit$lin<-mapply(Hlin,treesfit$DBH)
+    treesval$lin<-mapply(Hlin,treesval$DBH)
+    biaslin<-sum(treesval$lin-treesval$H)/dim(treesval)[1]
+    rmselin<-sqrt(sum((treesval$lin-treesval$H)^2)/((dim(treesval)[1])-1))
+      
+#2. Log-linear
+    FITloglin<-lm(treesfit$H~log(treesfit$DBH,base = exp(1)))
+    Hloglin<-function(DBH){
+          coef(FITloglin)[[1]]+(coef(FITloglin)[[2]]*log(DBH))
+    }
+    treesfit$loglin<-mapply(Hloglin,treesfit$DBH)
+    treesval$loglin<-mapply(Hloglin,treesval$DBH)
+    biasloglin<-sum(treesval$loglin-treesval$H)/dim(treesval)[1]  
+    rmseloglin<-sqrt(sum((treesval$loglin-treesval$H)^2)/((dim(treesval)[1])-1))          
+   
+#3. Log-log
+    FITloglog<-lm((log(treesfit$H,base = exp(1)))~log(treesfit$DBH,base = exp(1)))
+    Hloglog<-function(DBH){
+          exp(coef(FITloglog)[[1]]+(coef(FITloglog)[[2]]*log(DBH)))
+    }
+    treesfit$loglog<-mapply(Hloglog,treesfit$DBH)
+    treesval$loglog<-mapply(Hloglog,treesval$DBH)
+    biasloglog<-sum(treesval$loglog-treesval$H)/dim(treesval)[1]  
+    rmseloglog<-sqrt(sum((treesval$loglog-treesval$H)^2)/((dim(treesval)[1])-1)) 
+
+#4. Power law
+    FITpwl<-nls(H~a*(DBH^b),data=treesfit,start=list(a=1,b=1))
+    Hpwl=function(DBH){
+                  (coef(FITpwl)[[1]])*(DBH^(coef(FITpwl)[[2]]))
+            }                      
+    treesfit$pwl<-mapply(Hpwl,treesfit$DBH)
+    treesval$pwl<-mapply(Hpwl,treesval$DBH)
+    biaspwl<-sum(treesval$pwl-treesval$H)/dim(treesval)[1]  
+    rmsepwl<-sqrt(sum((treesval$pwl-treesval$H)^2)/((dim(treesval)[1])-1)) 
+
+   
+#5. Canham / Michaelis Menten
+    FITcanham<-nls(H~a/(1+(b/DBH)),data=treesfit,start=list(a=1,b=1))
+    Hcanham=function(DBH){
+                  (coef(FITcanham)[[1]])/(1+((coef(FITcanham)[[2]])/DBH))                        
+            }           
+    treesfit$canham<-mapply(Hcanham,treesfit$DBH)
+    treesval$canham<-mapply(Hcanham,treesval$DBH)
+    biascanham<-sum(treesval$canham-treesval$H)/dim(treesval)[1]  
+    rmsecanham<-sqrt(sum((treesval$canham-treesval$H)^2)/((dim(treesval)[1])-1)) 
+   
+#6. Weibull 2 parameters
+    FITWei2p<-nls(H~a*(1-exp(-DBH/b)),data=treesfit,start=list(a=10,b=1))
+    Hwei2p=function(DBH){
+                  (coef(FITWei2p)[[1]])*(1-exp(-DBH/(coef(FITWei2p)[[2]])))
+            }                      
+    treesfit$wei2p<-mapply(Hwei2p,treesfit$DBH)
+    treesval$wei2p<-mapply(Hwei2p,treesval$DBH)
+    biasHLwei2p<-sum(treesval$wei2p-treesval$H)/dim(treesval)[1]  
+    rmseHLwei2p<-sqrt(sum((treesval$wei2p-treesval$H)^2)/((dim(treesval)[1])-1)) 
+    
+#7. Weibull 3 parameters
+    FITWei3p<-nls(H~a*(1-exp(-b*DBH^k)),data=treesfit,start=list(a=30,b=0.01,k=0.6))
+    Hwei3p=function(DBH){
+            (coef(FITWei3p)[[1]])*(1-exp(-(coef(FITWei3p)[[2]])*DBH^(coef(FITWei3p)[[3]])))
+            }             
+    treesfit$wei3p<-mapply(Hwei3p,treesfit$DBH)
+    treesval$wei3p<-mapply(Hwei3p,treesval$DBH)
+    biasHLwei3<-sum(treesval$wei3p-treesval$H)/dim(treesval)[1]  
+    rmseHLwei3<-sqrt(sum((treesval$wei3p-treesval$H)^2)/((dim(treesval)[1])-1)) 
+ 
+#8. Gompertz
+    FITGomp<-nls(H~k*exp(-log(k/1.3)*exp(-r*DBH)),data=treesfit, start=list(k=100, r=0.5))
+    Hgomp=function(DBH){
+            (coef(FITGomp)[[1]])*exp(-log((coef(FITGomp)[[1]])/1.3)*exp(-(coef(FITGomp)[[2]])*DBH))
+            }
+    treesfit$gomp<-mapply(Hgomp,treesfit$DBH)
+    treesval$gomp<-mapply(Hgomp,treesval$DBH)
+    biasgom<-sum(treesval$gomp-treesval$H)/dim(treesval)[1]
+    rmsegom<-sqrt(sum((treesval$gomp-treesval$H)^2)/((dim(treesval)[1])-1))  
+    
+    
+#9. Feldpausch 2011  #Pantropical #log-log #without including environmetal 
+    HF11P<-function(DBH) {
+        exp(1.2229+(0.5320*(log(DBH))))
+    }
+    treesfit$HF11P<-mapply(HF11P,treesfit$DBH)
+    treesval$F11P<- mapply(HF11P, treesval$DBH)
+    biasF11P<-sum(treesval$F11P-treesval$H)/dim(treesval)[1] 
+    rmseF11P<-sqrt(sum((treesval$F11P-treesval$H)^2)/((dim(treesval)[1])-1))  
+    
+#10. Feldpausch 2011 #Pantropical #log-log #factores
+    	A= 50 #For BCI
+    	Pv= 20  #WorldClimb , in % #For BCI
+    	Sd= 2 #For BCI
+    	Ta=15 #in Celsius BCI
+    	R<-0.4893+(0.0098*A)+(0.0034*Pv)+(-0.0632*Sd)+(0.0204*Ta) #For BCI          
+    HF11E<-function(DBH){
+        exp(R+(0.5296*log(DBH)))
+    }
+    treesfit$HF11E<-mapply(HF11E,treesfit$DBH)
+    treesval$F11E<-mapply(HF11E,treesval$DBH)
+    biasF11E<-sum(treesval$F11E-treesval$H)/dim(treesval)[1]
+    rmseF11E<-sqrt(sum((treesval$F11E-treesval$H)^2)/((dim(treesval)[1])-1))  
+    
+#11. Feldpausch 2012 #Pantropical #Weibull
+    HF12<-function(DBH) {
+        50.874*(1-(exp(-0.0420*DBH^0.784)))
+    }
+    treesfit$HF12<-mapply(HF12,treesfit$DBH)
+    treesval$F12P<- mapply(HF12, treesval$DBH)
+    biasF12P<-sum(treesval$F12P-treesval$H)/dim(treesval)[1] 
+    rmseF12P<-sqrt(sum((treesval$F12P-treesval$H)^2)/((dim(treesval)[1])-1))    
+    
+#12a. Feldpausch 2011 #America #log-log #without including environmetal 
+    HF11A<-function(DBH) {
+        exp(1.3760+(0.4854*(log(DBH))))
+    }
+    treesfit$HF11A<-mapply(HF11A,treesfit$DBH)
+    treesval$F11A<- mapply(HF11A, treesval$DBH)
+    biasF11A<-sum(treesval$F11A-treesval$H)/dim(treesval)[1]
+    rmseF11A<-sqrt(sum((treesval$F11A-treesval$H)^2)/((dim(treesval)[1])-1))  
+
+
+#12b. Feldpausch 2011 -SA #Asia #log-log #without including environmetal 
+    HF11A<-function(DBH) {
+        exp(1.2156+(0.5782ln*(log(DBH))))
+    }
+    Hall$HF11A<-mapply(HF11A,Hall$DBH)
+    Hall$F11A<- mapply(HF11A, Hall$DBH)
+    biasF11A<-sum(Hall$F11A-Hall$H)/dim(Hall)[1]
+    rmseF11A<-sqrt(sum((Hall$F11A-Hall$H)^2)/((dim(Hall)[1])-1))  
+ 
+
+  
+
+##########################################
+#4. H calculation using fitted equations
+##########################################
+
+#4.1 Refit models using all individuals####IMPORTANT###
+ 
+#USE same above equations, but including all individuals!!
+
+
+#4.2 calculate estimated H
+
+Hall<-height
+Hall$lin<-mapply(Hlin,heighval$DBH)
+Hall$loglin<-mapply(Hloglin,heighval$DBH)
+Hall$loglog<-mapply(Hloglog,heighval$DBH)
+Hall$pwl<-mapply(Hpwl,heighval$DBH)
+Hall$canham<-mapply(Hcanham,heighval$DBH)
+Hall$wei2p<-mapply(Hwei2p,heighval$DBH)
+Hall$wei3p<-mapply(Hwei3p,heighval$DBH)
+Hall$gomp<-mapply(Hgomp,heighval$DBH)
+Hall$HF11P<-mapply(HF11P,heighval$DBH)
+Hall$HF11E<-mapply(HF11E,heighval$DBH)
+Hall$F12P<- mapply(HF12, heighval$DBH)
+Hall$HF11A<-mapply(HF11A,heighval$DBH)
+
+
+#Figure 1 paper
+####################
+
+plot(Hall$DBH, Hall$H, ,xlab="DBH (cm)",ylab="H (m)",type="p",pch=20,col="darkgrey",ylim=c(0, 60))
+curve(Hlin,0.8,600,add=T,col="red",lwd=2.5)
+curve(Hloglin,0.8,600,add=T,col="blue",lwd=2.5)
+curve(Hloglog,0.8,600,add=T,col="green",lwd=2.5)
+curve(Hpwl,0.8,600,add=T,col="darkkhaki",lwd=2.5)  
+curve(Hcanham,0.8,600,add=T,col="orange",lwd=2.5)
+curve(Hwei2p,0.8,600,add=T,col="yellow",lwd=2.5)
+curve(Hwei3p,0.8,600,add=T,col="cyan",lwd=2.5)
+curve(Hgomp,0.8,600,add=T,col="darkred",lwd=2.5)
+curve(HF11E,0.8,600,add=T,col="darkgreen",lwd=2.5)
+curve(HF11A,0.8,600,add=T,col="hotpink",lwd=2.5)
+curve(HF11P,0.8,600,add=T,col="darkgrey",lwd=2.5)
+curve(HF12,0.8,600,add=T,col="purple",lwd=2.5)
+
+
+###Errors in H (absolute and relative)
+########################################
+
+Hall$AElin<-(Hall$lin-Hall$H)
+Hall$RElin<-(Hall$lin-Hall$H)/Hall$H         
+Hall$AEloglin<-(Hall$loglin-Hall$H)
+Hall$REloglin<-(Hall$loglin-Hall$H)/Hall$H   
+Hall$AEloglog <-(Hall$loglog-Hall$H)
+Hall$REloglog <-(Hall$loglog-Hall$H)/Hall$H 
+Hall$AEpwl<-(Hall$pwl-Hall$H)
+Hall$REpwl<-(Hall$pwl-Hall$H)/Hall$H 
+Hall$AEcanham<-(Hall$canham-Hall$H)
+Hall$REcanham<-(Hall$canham-Hall$H)/Hall$H    
+Hall$AEwei2p<-(Hall$wei2p-Hall$H)
+Hall$REwei2p<-(Hall$wei2p-Hall$H)/Hall$H      
+Hall$AEwei3p<-(Hall$wei3p-Hall$H)
+Hall$REwei3p<-(Hall$wei3p-Hall$H)/Hall$H       
+Hall$AEgomp<-(Hall$gomp-Hall$H)
+Hall$REgomp<-(Hall$gomp-Hall$H)/Hall$H          
+Hall$AEmm<-(Hall$mm-Hall$H)
+Hall$REmm<-(Hall$mm-Hall$H)/Hall$H         
+Hall$AEHF11P<-(Hall$HF11P-Hall$H)
+Hall$REHF11P<-(Hall$HF11P-Hall$H)/Hall$H      
+Hall$AEHF11E<-(Hall$HF11E-Hall$H) 
+Hall$REHF11E<-(Hall$HF11E-Hall$H)/Hall$H    
+Hall$AEF12P<-(Hall$F12P-Hall$H) 
+Hall$REF12P<-(Hall$F12P-Hall$H)/Hall$H    
+Hall$AEHF11A<-(Hall$HF11A-Hall$H)
+Hall$REHF11A<-(Hall$HF11A-Hall$H)/Hall$H
+
+##figure 2 paper
+##################
+
+library(ggplot2)
+library(gridExtra)
+
+p1<-ggplot(Hall, aes(DBH,AElin)) + geom_point(col=("#ff600112"),pch = 16) + geom_smooth(col=("navy"),fill=180,size=1)+ xlab("")+ ylab("Error in H(m)")+ggtitle("Linear")+ylim(c(-30,60))+ theme_bw() +theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.border = element_blank(),panel.background = element_blank()) + geom_hline(yintercept = 0,col="grey",lty=2)
+p2<-ggplot(Hall, aes(DBH,AEloglin)) + geom_point(col=("#ff600112"),pch = 16) + geom_smooth(col=("navy"),fill=180,size=1)+ xlab("")+ ylab("Error in H(m)")+ggtitle("Log-linear")+ylim(c(-30,60))+ theme_bw() +theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.border = element_blank(),panel.background = element_blank())+ geom_hline(yintercept = 0,col="grey",lty=2) 
+p3<-ggplot(Hall, aes(DBH,AEloglog))+ggtitle("Log-log") + geom_point(col=("#ff600112"),pch = 16) + geom_smooth(col=("navy"),fill=180,size=1)+ xlab("")+ ylab("Error in H(m)")+ylim(c(-30,60))+ theme_bw() +theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.border = element_blank(),panel.background = element_blank()) + geom_hline(yintercept = 0,col="grey",lty=2)
+p4<-ggplot(Hall, aes(DBH,AEpwl))+ggtitle("Power law") + geom_point(col=("#ff600112"),pch = 16) + geom_smooth(col=("navy"),fill=180,size=1)+ xlab("")+ ylab("Error in H(m)")+ylim(c(-30,60))+ theme_bw() +theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.border = element_blank(),panel.background = element_blank()) + geom_hline(yintercept = 0,col="grey",lty=2)
+p5<-ggplot(Hall, aes(DBH,AEcanham))+ggtitle("Canham-Michaelis-Menten") + geom_point(col=("#ff600112"),pch = 16) + geom_smooth(col=("navy"),fill=180,size=1)+ xlab("")+ ylab("Error in H(m)")+ylim(c(-30,60))+ theme_bw() +theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.border = element_blank(),panel.background = element_blank()) + geom_hline(yintercept = 0,col="grey",lty=2)
+p6<-ggplot(Hall, aes(DBH,AEwei2p))+ggtitle("2P Weibull") + geom_point(col=("#ff600112"),pch = 16) + geom_smooth(col=("navy"),fill=180,size=1)+ xlab("")+ ylab("Error in H(m)")+ylim(c(-30,60))+ theme_bw() +theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.border = element_blank(),panel.background = element_blank()) + geom_hline(yintercept = 0,col="grey",lty=2)
+p7<-ggplot(Hall, aes(DBH,AEwei3p))+ggtitle("3P Weibull") + geom_point(col=("#ff600112"),pch = 16) + geom_smooth(col=("navy"),fill=180,size=1)+ xlab("")+ ylab("Error in H(m)")+ylim(c(-30,60))+ theme_bw() +theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.border = element_blank(),panel.background = element_blank())+ geom_hline(yintercept = 0,col="grey",lty=2) 
+p8<-ggplot(Hall, aes(DBH,AEgomp))+ggtitle("Gompertz") + geom_point(col=("#ff600112"),pch = 16) + geom_smooth(col=("navy"),fill=180,size=1)+ xlab("")+ ylab("Error in H(m)")+ylim(c(-30,60))+ theme_bw() +theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.border = element_blank(),panel.background = element_blank())+ geom_hline(yintercept = 0,col="grey",lty=2) 
+p9<-ggplot(Hall, aes(DBH,AEHF11P))+ggtitle("Feld 2011P") + geom_point(col=("#ff600112"),pch = 16) + geom_smooth(col=("navy"),fill=180,size=1)+ xlab("DBH (cm)")+ ylab("Error in H(m)")+ylim(c(-30,60))+ theme_bw() +theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.border = element_blank(),panel.background = element_blank()) + geom_hline(yintercept = 0,col="grey",lty=2)
+p10<-ggplot(Hall, aes(DBH,AEHF11E))+ggtitle("Feld 2011E") + geom_point(col=("#ff600112"),pch = 16) + geom_smooth(col=("navy"),fill=180,size=1)+ xlab("DBH (cm)")+ ylab("Error in H(m)")+ylim(c(-30,60))+ theme_bw() +theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.border = element_blank(),panel.background = element_blank()) + geom_hline(yintercept = 0,col="grey",lty=2)
+p11<-ggplot(Hall, aes(DBH,AEF12P))+ggtitle("Feld 2012") + geom_point(col=("#ff600112"),pch = 16) + geom_smooth(col=("navy"),fill=180,size=1)+ xlab("DBH (cm)")+ ylab("Error in H(m)")+ylim(c(-30,60))+ theme_bw() +theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.border = element_blank(),panel.background = element_blank()) + geom_hline(yintercept = 0,col="grey",lty=2)
+p12<-ggplot(Hall, aes(DBH,AEHF11A))+ggtitle("Feld 2011A") + geom_point(col=("#ff600112"),pch = 16) + geom_smooth(col=("navy"),fill=180,size=1)+ xlab("DBH (cm)")+ ylab("Error in H(m)")+ylim(c(-30,60))+ theme_bw() +theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.border = element_blank(),panel.background = element_blank()) + geom_hline(yintercept = 0,col="grey",lty=2)
+
+grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,p9,p10,p11,p12,ncol=4)
+
+
+
+
+###########################################
+#5. AGB calculation and compound errors
+#########################################
+
+
+##Chave 2014
+CAGB<-function(ro,DBH,H){
+       0.0673*((ro*(DBH^2)*H)^0.976)
+}
+
+
+Hall$AGB_lin<-mapply(CAGB,Hall$WD,Hall$DBH,Hall$lin)  
+Hall$AGB_loglin<-mapply(CAGB,Hall$WD,Hall$DBH,Hall$loglin) 
+Hall$AGB_loglog<-mapply(CAGB,Hall$WD,Hall$DBH,Hall$loglog) 
+Hall$AGB_pwl<-mapply(CAGB,hwd$WD,hwd$DBH,hwd$pwl)  
+Hall$AGB_canham<-mapply(CAGB,Hall$WD,Hall$DBH,Hall$canham)  
+Hall$AGB_wei2p<-mapply(CAGB,Hall$WD,Hall$DBH,Hall$wei2p) 
+Hall$AGB_wei3p<-mapply(CAGB,Hall$WD,Hall$DBH,Hall$wei3p)  
+Hall$AGB_gomp<-mapply(CAGB,Hall$WD,Hall$DBH,Hall$gomp)  
+Hall$AGB_F11P<-mapply(CAGB,Hall$WD,Hall$DBH,Hall$HF11P)  
+Hall$AGB_F11E<-mapply(CAGB,Hall$WD,Hall$DBH,Hall$HF11E) 
+Hall$AGB_F12<-mapply(CAGB,Hall$WD,Hall$DBH,Hall$F12)  
+Hall$AGB_F11A<-mapply(CAGB,Hall$WD,Hall$DBH,Hall$HF11A)  
+
+
+#rmse
+rmse_lin<-sqrt(sum((Hall$AGB_lin-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3)) 
+rmse_loglin<-sqrt(sum((Hall$AGB_loglin-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3))  
+rmse_loglog<-sqrt(sum((Hall$AGB_loglog-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3)) 
+rmse_pwl<-sqrt(sum((Hall$AGB_pwl-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3))   
+rmse_canham<-sqrt(sum((Hall$AGB_canham-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3))  
+rmse_wei2p<-sqrt(sum((Hall$AGB_wei2p-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3))  
+rmse_wei3p<-sqrt(sum((Hall$AGB_wei3p-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3))   
+rmse_gomp<-sqrt(sum((Hall$AGB_gomp-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3)) 
+#rmse_mm<-sqrt(sum((Hall$AGB_mm-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3))  
+rmse_F11P<-sqrt(sum((Hall$AGB_F11P-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3))  
+rmse_F11E<-sqrt(sum((Hall$AGB_F11E-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3))  
+rmse_F12<-sqrt(sum((Hall$AGB_F12-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3))
+rmse_F11A<-sqrt(sum((Hall$AGB_F11A-Hall$AGB)^2,na.rm=TRUE)/(dim(Hall)[1]-3))   
+
+
+
+#bias
+bias_lin<- sum (Hall$AGB_lin$AGB ,na.rm=TRUE) /dim(Hall)[1] 
+bias_loglin<- sum (Hall$AGB_loglin$AGB ,na.rm=TRUE) /dim(Hall)[1]  
+bias_loglog<- sum (Hall$AGB_loglog$AGB ,na.rm=TRUE) /dim(Hall)[1]  
+bias_pwl<- sum (Hall$AGB_pwl$AGB ,na.rm=TRUE) /dim(Hall)[1]
+bias_canham<- sum (Hall$AGB_canham$AGB ,na.rm=TRUE) /dim(Hall)[1]  
+bias_wei2p<- sum (Hall$AGB_wei2p$AGB ,na.rm=TRUE) /dim(Hall)[1]  
+bias_wei3p<- sum (Hall$AGB_wei3pl$AGB ,na.rm=TRUE) /dim(Hall)[1]   
+bias_gomp<- sum (Hall$AGB_gomp$AGB ,na.rm=TRUE) /dim(Hall)[1] 
+bias_F11P<- sum (Hall$AGB_F11P$AGB ,na.rm=TRUE) /dim(Hall)[1]  
+bias_F11E<- sum (Hall$AGB_F11E$AGB ,na.rm=TRUE) /dim(Hall)[1]  
+bias_F12<- sum (Hall$AGB_F12$AGB ,na.rm=TRUE) /dim(Hall)[1]
+bias_F11A<- sum (Hall$AGB_F11A$AGB ,na.rm=TRUE) /dim(Hall)[1]   
+ 
+
+#individual errors
+Hall$error_lin<-(Hall$AGB_lin$AGB)
+Hall$error_loglin<-(Hall$AGB_loglin$AGB)
+Hall$error_loglog<-(Hall$AGB_loglog$AGB)
+Hall$error_loglog<-(Hall$AGB_loglog$AGB)
+Hall$error_pwl<-(Hall$AGB_pwl$AGB)
+Hall$error_canham<-(Hall$AGB_canham$AGB)
+Hall$error_wei2p<-(Hall$AGB_wei2p$AGB)
+Hall$error_wei3p<-(Hall$AGB_wei3p$AGB)
+Hall$error_gomp<-(Hall$AGB_gomp$AGB)
+Hall$error_F11P<-(Hall$AGB_F11P$AGB)
+Hall$error_F11E<-(Hall$AGB_F11E$AGB)
+Hall$error_F12<-(Hall$AGB_F12$AGB)
+Hall$error_F11A<-(Hall$AGB_F11A$AGB)
+
+
+
+#individual errors  absolute
+Hall$AE_lin<-abs(Hall$error_lin)
+Hall$AE_loglin<-abs(Hall$error_loglin)
+Hall$AE_loglog<-abs(Hall$error_loglog)
+Hall$AE_canham<-abs(Hall$error_canham)
+Hall$AE_wei2p<-abs(Hall$error_wei2p)
+Hall$AE_wei3p<-abs(Hall$error_wei3p)
+Hall$AE_gomp<-abs(Hall$error_gomp)
+Hall$AE_mm<-abs(Hall$error_mm)
+Hall$AE_FE11P<-abs(Hall$error_F11P)
+Hall$AE_FE11E<-abs(Hall$error_F11E)
+Hall$AE_FE12<-abs(Hall$error_F12)
+Hall$AE_FE11A<-abs(Hall$error_F11A)
+Hall$AE_pwl<-abs(Hall$error_pwl)
+
+
+#######FIGURE 3#############
+
+##figure 3.a
+###quantify error dbh class
+
+
+#split data diameter class
+C1<-subset(Hall,Hall$DBH<10)  
+C2<-subset(Hall,Hall$DBH>=10 & Hall$DBH<20)  
+C3<-subset(Hall,Hall$DBH>=20 & Hall$DBH<30)  
+C4<-subset(Hall,Hall$DBH>=30 & Hall$DBH<40) 
+C5<-subset(Hall,Hall$DBH>=40 & Hall$DBH<50)  
+C6<-subset(Hall,Hall$DBH>=50 & Hall$DBH<60)  
+C7<-subset(Hall,Hall$DBH>=60 & Hall$DBH<70)  
+C8<-subset(Hall,Hall$DBH>=70 & Hall$DBH<80) 
+C9<-subset(Hall,Hall$DBH>=80 & Hall$DBH<90)  
+C10<-subset(Hall,Hall$DBH>=90 & Hall$DBH<100)  
+C11<-subset(Hall,Hall$DBH>=100 & Hall$DBH<150)  
+C12<-subset(Hall,Hall$DBH>150)  
+
+
+
+##total error each eq
+ ########################
+
+#individual errors  absolute
+total_lin<-sum(Hall$AE_lin<-abs(Hall$error_lin),na.rm = T)
+total_loglin<-sum(Hall$AE_loglin<-abs(Hall$error_loglin),na.rm = T)
+total_loglog<-sum(Hall$AE_loglog<-abs(Hall$error_loglog),na.rm = T)
+total_pwl<-sum(Hall$AE_pwl<-abs(Hall$error_pwl),na.rm = T)
+total_canham<-sum(Hall$AE_canham<-abs(Hall$error_canham) ,na.rm = T)
+total_wei2p<-sum(Hall$AE_wei2p<-abs(Hall$error_wei2p),na.rm = T)
+total_wei3p<-sum(Hall$AE_wei3p<-abs(Hall$error_wei3p) ,na.rm = T)
+total_gomp<-sum(Hall$AE_gomp<-abs(Hall$error_gomp) ,na.rm = T)
+total_FE11P<-sum(Hall$AE_FE11P<-abs(Hall$error_F11P),na.rm = T)
+total_FE11E<-sum(Hall$AE_FE11E<-abs(Hall$error_F11E),na.rm = T)
+total_FE12<-sum(Hall$AE_FE12<-abs(Hall$error_F12),na.rm = T)
+total_FE11A<-sum(Hall$AE_FE11A<-abs(Hall$error_F11A),na.rm = T)
+
+
+##error each class
+########################
+
+##error each class -in percnetage
+########################
+#linear
+C1_lin<-((sum((C1$error_lin),na.rm = T)))
+C2_lin<-((sum((C2$error_lin),na.rm = T)))
+C3_lin<-((sum((C3$error_lin),na.rm = T)))
+C4_lin<-((sum((C4$error_lin),na.rm = T)))
+C5_lin<-((sum((C5$error_lin),na.rm = T)))
+C6_lin<-((sum((C6$error_lin),na.rm = T)))
+C7_lin<-((sum((C7$error_lin),na.rm = T)))
+C8_lin<-((sum((C8$error_lin),na.rm = T)))
+C9_lin<-((sum((C9$error_lin),na.rm = T)))
+C10_lin<-((sum((C10$error_lin),na.rm = T)))
+C11_lin<-((sum((C11$error_lin),na.rm = T)))
+C12_lin<-((sum((C12$error_lin),na.rm = T)))
+allclass_lin<-c(C1_lin,C2_lin,C3_lin,C4_lin,C5_lin,C6_lin,C7_lin,C8_lin,C9_lin,C10_lin,C11_lin,C12_lin)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_lin<-cbind(classes,allclass_lin)
+
+
+
+###############################################HERE FOR PLOT
+#log-loglinear
+C1_loglin<-((sum((C1$error_loglin),na.rm = T)) )
+C2_loglin<-((sum((C2$error_loglin),na.rm = T)) )
+C3_loglin<-((sum( (C3$error_loglin),na.rm = T)) )
+C4_loglin<-((sum((C4$error_loglin),na.rm = T)) )
+C5_loglin<-((sum((C5$error_loglin),na.rm = T)) )
+C6_loglin<-((sum((C6$error_loglin),na.rm = T)) )
+C7_loglin<-((sum((C7$error_loglin),na.rm = T)) )
+C8_loglin<-((sum((C8$error_loglin),na.rm = T)) )
+C9_loglin<-((sum((C9$error_loglin),na.rm = T)) )
+C10_loglin<-((sum((C10$error_loglin),na.rm = T)) )
+C11_loglin<-((sum((C11$error_loglin),na.rm = T)) )
+C12_loglin<-((sum((C12$error_loglin),na.rm = T)) )
+allclass_loglin<-c(C1_loglin,C2_loglin,C3_loglin,C4_loglin,C5_loglin,C6_loglin,C7_loglin,C8_loglin,C9_loglin,C10_loglin,C11_loglin,C12_loglin)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_loglin<-cbind(classes,allclass_loglin)
+
+
+#error_loglog
+C1_loglog<-((sum((C1$error_loglog),na.rm = T)) )
+C2_loglog<-((sum((C2$error_loglog),na.rm = T)) )
+C3_loglog<-((sum((C3$error_loglog),na.rm = T)) )
+C4_loglog<-((sum((C4$error_loglog),na.rm = T)) )
+C5_loglog<-((sum((C5$error_loglog),na.rm = T)) )
+C6_loglog<-((sum((C6$error_loglog),na.rm = T)) )
+C7_loglog<-((sum((C7$error_loglog),na.rm = T)) )
+C8_loglog<-((sum((C8$error_loglog),na.rm = T)) )
+C9_loglog<-((sum((C9$error_loglog),na.rm = T)) )
+C10_loglog<-((sum((C10$error_loglog),na.rm = T)) )
+C11_loglog<-((sum((C11$error_loglog),na.rm = T)) )
+C12_loglog<-((sum((C12$error_loglog),na.rm = T)) )
+allclass_loglog<-c(C1_loglog,C2_loglog,C3_loglog,C4_loglog,C5_loglog,C6_loglog,C7_loglog,C8_loglog,C9_loglog,C10_loglog,C11_loglog,C12_loglog)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_loglog<-cbind(classes,allclass_loglog)
+
+#error_pwl
+C1_pwl<-((sum((C1$error_pwl),na.rm = T)) )
+C2_pwl<-((sum((C2$error_pwl),na.rm = T)) )
+C3_pwl<-((sum((C3$error_pwl),na.rm = T)) )
+C4_pwl<-((sum((C4$error_pwl),na.rm = T)) )
+C5_pwl<-((sum((C5$error_pwl),na.rm = T)) )
+C6_pwl<-((sum((C6$error_pwl),na.rm = T)) )
+C7_pwl<-((sum((C7$error_pwl),na.rm = T)) )
+C8_pwl<-((sum((C8$error_pwl),na.rm = T)) )
+C9_pwl<-((sum((C9$error_pwl),na.rm = T)) )
+C10_pwl<-((sum((C10$error_pwl),na.rm = T)) )
+C11_pwl<-((sum((C11$error_pwl),na.rm = T)) )
+C12_pwl<-((sum((C12$error_pwl),na.rm = T)) )
+allclass_pwl<-c(C1_pwl,C2_pwl,C3_pwl,C4_pwl,C5_pwl,C6_pwl,C7_pwl,C8_pwl,C9_pwl,C10_pwl,C11_pwl,C12_pwl)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_pwl<-cbind(classes,allclass_pwl)
+
+
+
+
+#error_canham
+C1_canham<-((sum((C1$error_canham),na.rm = T)) )
+C2_canham<-((sum((C2$error_canham),na.rm = T)) )
+C3_canham<-((sum((C3$error_canham),na.rm = T)) )
+C4_canham<-((sum((C4$error_canham),na.rm = T)) )
+C5_canham<-((sum((C5$error_canham),na.rm = T)) )
+C6_canham<-((sum((C6$error_canham),na.rm = T)) )
+C7_canham<-((sum((C7$error_canham),na.rm = T)) )
+C8_canham<-((sum((C8$error_canham),na.rm = T)) )
+C9_canham<-((sum((C9$error_canham),na.rm = T)) )
+C10_canham<-((sum((C10$error_canham),na.rm = T)) )
+C11_canham<-((sum((C11$error_canham),na.rm = T)) )
+C12_canham<-((sum((C12$error_canham),na.rm = T)) )
+allclass_canham<-c(C1_canham,C2_canham,C3_canham,C4_canham,C5_canham,C6_canham,C7_canham,C8_canham,C9_canham,C10_canham,C11_canham,C12_canham)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_canham<-cbind(classes,allclass_canham)
+
+
+#error_wei2p
+C1_wei2p<-((sum((C1$error_wei2p),na.rm = T)) )
+C2_wei2p<-((sum((C2$error_wei2p),na.rm = T)) )
+C3_wei2p<-((sum((C3$error_wei2p),na.rm = T)) )
+C4_wei2p<-((sum((C4$error_wei2p),na.rm = T)) )
+C5_wei2p<-((sum((C5$error_wei2p),na.rm = T)) )
+C6_wei2p<-((sum((C6$error_wei2p),na.rm = T)) )
+C7_wei2p<-((sum((C7$error_wei2p),na.rm = T)) )
+C8_wei2p<-((sum((C8$error_wei2p),na.rm = T)) )
+C9_wei2p<-((sum((C9$error_wei2p),na.rm = T)) )
+C10_wei2p<-((sum((C10$error_wei2p),na.rm = T)) )
+C11_wei2p<-((sum((C11$error_wei2p),na.rm = T)) )
+C12_wei2p<-((sum((C12$error_wei2p),na.rm = T)) )
+allclass_wei2p<-c(C1_wei2p,C2_wei2p,C3_wei2p,C4_wei2p,C5_wei2p,C6_wei2p,C7_wei2p,C8_wei2p,C9_wei2p,C10_wei2p,C11_wei2p,C12_wei2p)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_wei2p<-cbind(classes,allclass_wei2p)
+
+
+
+#error_wei3p
+C1_wei3p<-((sum((C1$error_wei3p),na.rm = T)) )
+C2_wei3p<-((sum((C2$error_wei3p),na.rm = T)) )
+C3_wei3p<-((sum((C3$error_wei3p),na.rm = T)) )
+C4_wei3p<-((sum((C4$error_wei3p),na.rm = T)) )
+C5_wei3p<-((sum((C5$error_wei3p),na.rm = T)) )
+C6_wei3p<-((sum((C6$error_wei3p),na.rm = T)) )
+C7_wei3p<-((sum((C7$error_wei3p),na.rm = T)) )
+C8_wei3p<-((sum((C8$error_wei3p),na.rm = T)) )
+C9_wei3p<-((sum((C9$error_wei3p),na.rm = T)) )
+C10_wei3p<-((sum((C10$error_wei3p),na.rm = T)) )
+C11_wei3p<-((sum((C11$error_wei3p),na.rm = T)) )
+C12_wei3p<-((sum((C12$error_wei3p),na.rm = T)) )
+allclass_wei3p<-c(C1_wei3p,C2_wei3p,C3_wei3p,C4_wei3p,C5_wei3p,C6_wei3p,C7_wei3p,C8_wei3p,C9_wei3p,C10_wei3p,C11_wei3p,C12_wei3p)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_wei3p<-cbind(classes,allclass_wei3p)
+
+
+#error_gomp
+C1_gomp<-((sum((C1$error_gomp),na.rm = T)) )
+C2_gomp<-((sum((C2$error_gomp),na.rm = T)) )
+C3_gomp<-((sum((C3$error_gomp),na.rm = T)) )
+C4_gomp<-((sum((C4$error_gomp),na.rm = T)) )
+C5_gomp<-((sum((C5$error_gomp),na.rm = T)) )
+C6_gomp<-((sum((C6$error_gomp),na.rm = T)) )
+C7_gomp<-((sum((C7$error_gomp),na.rm = T)) )
+C8_gomp<-((sum((C8$error_gomp),na.rm = T)) )
+C9_gomp<-((sum((C9$error_gomp),na.rm = T)) )
+C10_gomp<-((sum((C10$error_gomp),na.rm = T)) )
+C11_gomp<-((sum((C11$error_gomp),na.rm = T)) )
+C12_gomp<-((sum((C12$error_gomp),na.rm = T)) )
+allclass_gomp<-c(C1_gomp,C2_gomp,C3_gomp,C4_gomp,C5_gomp,C6_gomp,C7_gomp,C8_gomp,C9_gomp,C10_gomp,C11_gomp,C12_gomp)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_gomp<-cbind(classes,allclass_gomp)
+
+
+
+#error_F11P
+C1_F11P<-((sum((C1$error_F11P),na.rm = T)) )
+C2_F11P<-((sum((C2$error_F11P),na.rm = T)) )
+C3_F11P<-((sum((C3$error_F11P),na.rm = T)) )
+C4_F11P<-((sum((C4$error_F11P),na.rm = T)) )
+C5_F11P<-((sum((C5$error_F11P),na.rm = T)) )
+C6_F11P<-((sum((C6$error_F11P),na.rm = T)) )
+C7_F11P<-((sum((C7$error_F11P),na.rm = T)) )
+C8_F11P<-((sum((C8$error_F11P),na.rm = T)) )
+C9_F11P<-((sum((C9$error_F11P),na.rm = T)) )
+C10_F11P<-((sum((C10$error_F11P),na.rm = T)) )
+C11_F11P<-((sum((C11$error_F11P),na.rm = T)) )
+C12_F11P<-((sum((C12$error_F11P),na.rm = T)) )
+allclass_F11P<-c(C1_F11P,C2_F11P,C3_F11P,C4_F11P,C5_F11P,C6_F11P,C7_F11P,C8_F11P,C9_F11P,C10_F11P,C11_F11P,C12_F11P)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_F11P<-cbind(classes,allclass_F11P)
+
+
+#error_F11E
+C1_F11E<-((sum((C1$error_F11E),na.rm = T)) )
+C2_F11E<-((sum((C2$error_F11E),na.rm = T)) )
+C3_F11E<-((sum((C3$error_F11E),na.rm = T)) )
+C4_F11E<-((sum((C4$error_F11E),na.rm = T)) )
+C5_F11E<-((sum((C5$error_F11E),na.rm = T)) )
+C6_F11E<-((sum((C6$error_F11E),na.rm = T)) )
+C7_F11E<-((sum((C7$error_F11E),na.rm = T)) )
+C8_F11E<-((sum((C8$error_F11E),na.rm = T)) )
+C9_F11E<-((sum((C9$error_F11E),na.rm = T)) )
+C10_F11E<-((sum((C10$error_F11E),na.rm = T)) )
+C11_F11E<-((sum((C11$error_F11E),na.rm = T)) )
+C12_F11E<-((sum((C12$error_F11E),na.rm = T)) )
+allclass_F11E<-c(C1_F11E,C2_F11E,C3_F11E,C4_F11E,C5_F11E,C6_F11E,C7_F11E,C8_F11E,C9_F11E,C10_F11E,C11_F11E,C12_F11E)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_F11E<-cbind(classes,allclass_F11E)
+
+
+#error_F12
+C1_F12<-((sum((C1$error_F12),na.rm = T)) )
+C2_F12<-((sum((C2$error_F12),na.rm = T)) )
+C3_F12<-((sum((C3$error_F12),na.rm = T)) )
+C4_F12<-((sum((C4$error_F12),na.rm = T)) )
+C5_F12<-((sum((C5$error_F12),na.rm = T)) )
+C6_F12<-((sum((C6$error_F12),na.rm = T)) )
+C7_F12<-((sum((C7$error_F12),na.rm = T)) )
+C8_F12<-((sum((C8$error_F12),na.rm = T)) )
+C9_F12<-((sum((C9$error_F12),na.rm = T)) )
+C10_F12<-((sum((C10$error_F12),na.rm = T)) )
+C11_F12<-((sum((C11$error_F12),na.rm = T)) )
+C12_F12<-((sum((C12$error_F12),na.rm = T)) )
+allclass_F12<-c(C1_F12,C2_F12,C3_F12,C4_F12,C5_F12,C6_F12,C7_F12,C8_F12,C9_F12,C10_F12,C11_F12,C12_F12)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_F12<-cbind(classes,allclass_F12)
+
+
+
+# error_F11A
+C1_F11A<-(((sum((C1$error_F11A),na.rm = T)) ) )
+C2_F11A<-(((sum((C2$error_F11A),na.rm = T)) ) )
+C3_F11A<-(((sum((C3$error_F11A),na.rm = T)) ) )
+C4_F11A<-(((sum((C4$error_F11A),na.rm = T)) )  )
+C5_F11A<-(((sum((C5$error_F11A),na.rm = T)) ) )
+C6_F11A<-(((sum((C6$error_F11A),na.rm = T)) ) )
+C7_F11A<-(((sum((C7$error_F11A),na.rm = T)) ) )
+C8_F11A<-(((sum((C8$error_F11A),na.rm = T)) ) )
+C9_F11A<-(((sum((C9$error_F11A),na.rm = T)) ) )
+C10_F11A<-(((sum((C10$error_F11A),na.rm = T)) ) )
+C11_F11A<-(((sum((C11$error_F11A),na.rm = T)) ) )
+C12_F11A<-(((sum((C12$error_F11A),na.rm = T)) ) )
+allclass_F11A<-c(C1_F11A,C2_F11A,C3_F11A,C4_F11A,C5_F11A,C6_F11A,C7_F11A,C8_F11A,C9_F11A,C10_F11A,C11_F11A,C12_F11A)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_F11A<-cbind(classes,allclass_F11A)
+
+
+
+
+########################
+##figure 3a MS #####
+####################
+
+plot(plot_lin, xlim=c(0,200), ylim=c(-500000,1000000) ,xlab="DBH (cm)",ylab="Error in AGB per DBH class (Kg)", pch=20,col="red")
+lines (plot_lin,col="red")
+points(plot_loglin, pch=20,col="blue")
+lines (plot_loglin,col="blue")
+points(plot_loglog, pch=20,col="green")
+lines (plot_loglog,col="green")
+points(plot_pwl, pch=20,col="darkkhaki")
+lines (plot_pwl,col="darkkhaki")
+points(plot_wei2p, pch=20,col="yellow")
+lines (plot_wei2p,col="yellow")
+points(plot_wei3p, pch=20,col="cyan")
+lines (plot_wei3p,col="cyan")
+points(plot_gomp, pch=20,col="darkred")
+lines (plot_gomp,col="darkred")
+points(plot_F11E, pch=20,col="darkgreen")
+lines (plot_F11E,col="darkgreen")
+points(plot_F11A, pch=20,col="hotpink")
+lines (plot_F11A,col="hotpink")
+points(plot_F12, pch=20,col="purple")
+lines (plot_F12,col="purple")
+points(plot_F11P, pch=20,col="darkgrey")
+lines (plot_F11P,col="darkgrey")
+abline(0,0)
+classesM<-c(5,15,25,35,45,55,65,75,85,95,125,175)
+rug(classesM,col="grey")
+
+
+##figure 3.b
+
+
+total_agb<-sum((Hall$AGB),na.rm = T) 
+
+# agb in each class
+C1_agb<-sum((C1$AGB),na.rm = T) 
+C2_agb<-sum((C2$AGB),na.rm = T) 
+C3_agb<-sum((C3$AGB),na.rm = T)
+C4_agb<-sum((C4$AGB),na.rm = T) 
+C5_agb<-sum((C5$AGB),na.rm = T) 
+C6_agb<-sum((C6$AGB),na.rm = T) 
+C7_agb<-sum((C7$AGB),na.rm = T) 
+C8_agb<-sum((C8$AGB),na.rm = T) 
+C9_agb<-sum((C9$AGB),na.rm = T) 
+C10_agb<-sum((C10$AGB),na.rm = T) 
+C11_agb<-sum((C11$AGB),na.rm = T) 
+C12_agb<-sum((C12$AGB),na.rm = T) 
+
+
+
+
+##error each class 
+########################
+#linear
+C1_lin<-((sum((C1$error_lin),na.rm = T)))/C1_agb*100
+C2_lin<-((sum((C2$error_lin),na.rm = T)))/C2_agb*100
+C3_lin<-((sum((C3$error_lin),na.rm = T)))/C3_agb*100
+C4_lin<-((sum((C4$error_lin),na.rm = T)))/C4_agb*100
+C5_lin<-((sum((C5$error_lin),na.rm = T))) /C5_agb*100
+C6_lin<-((sum((C6$error_lin),na.rm = T)))/C6_agb*100
+C7_lin<-((sum((C7$error_lin),na.rm = T)))/C7_agb*100
+C8_lin<-((sum((C8$error_lin),na.rm = T)))/C8_agb*100
+C9_lin<-((sum((C9$error_lin),na.rm = T)))/C9_agb*100
+C10_lin<-((sum((C10$error_lin),na.rm = T)))/C10_agb*100
+C11_lin<-((sum((C11$error_lin),na.rm = T)))/C11_agb*100
+C12_lin<-((sum((C12$error_lin),na.rm = T)))/C12_agb*100
+allclass_lin<-c(C1_lin,C2_lin,C3_lin,C4_lin,C5_lin,C6_lin,C7_lin,C8_lin,C9_lin,C10_lin,C11_lin,C12_lin)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_lin<-cbind(classes,allclass_lin)
+
+
+#log-loglinear
+C1_loglin<-((sum((C1$error_loglin),na.rm = T)) )/C1_agb*100
+C2_loglin<-((sum((C2$error_loglin),na.rm = T)) )/C2_agb*100
+C3_loglin<-((sum( (C3$error_loglin),na.rm = T)) )/C3_agb*100
+C4_loglin<-((sum((C4$error_loglin),na.rm = T)) )/C4_agb*100
+C5_loglin<-((sum((C5$error_loglin),na.rm = T)) )/C5_agb*100
+C6_loglin<-((sum((C6$error_loglin),na.rm = T)) )/C6_agb*100
+C7_loglin<-((sum((C7$error_loglin),na.rm = T)) )/C7_agb*100
+C8_loglin<-((sum((C8$error_loglin),na.rm = T)) )/C8_agb*100
+C9_loglin<-((sum((C9$error_loglin),na.rm = T)) )/C9_agb*100
+C10_loglin<-((sum((C10$error_loglin),na.rm = T)) )/C10_agb*100
+C11_loglin<-((sum((C11$error_loglin),na.rm = T)) )/C11_agb*100
+C12_loglin<-((sum((C12$error_loglin),na.rm = T)) )/C12_agb*100
+allclass_loglin<-c(C1_loglin,C2_loglin,C3_loglin,C4_loglin,C5_loglin,C6_loglin,C7_loglin,C8_loglin,C9_loglin,C10_loglin,C11_loglin,C12_loglin)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_loglin<-cbind(classes,allclass_loglin)
+
+
+#error_loglog
+C1_loglog<-((sum((C1$error_loglog),na.rm = T)) )/C1_agb*100
+C2_loglog<-((sum((C2$error_loglog),na.rm = T)) )/C2_agb*100
+C3_loglog<-((sum((C3$error_loglog),na.rm = T)) )/C3_agb*100
+C4_loglog<-((sum((C4$error_loglog),na.rm = T)) )/C4_agb*100
+C5_loglog<-((sum((C5$error_loglog),na.rm = T)) )/C5_agb*100
+C6_loglog<-((sum((C6$error_loglog),na.rm = T)) )/C6_agb*100
+C7_loglog<-((sum((C7$error_loglog),na.rm = T)) )/C7_agb*100
+C8_loglog<-((sum((C8$error_loglog),na.rm = T)) )/C8_agb*100
+C9_loglog<-((sum((C9$error_loglog),na.rm = T)) )/C9_agb*100
+C10_loglog<-((sum((C10$error_loglog),na.rm = T)) )/C10_agb*100
+C11_loglog<-((sum((C11$error_loglog),na.rm = T)) )/C11_agb*100
+C12_loglog<-((sum((C12$error_loglog),na.rm = T)) )/C12_agb*100
+allclass_loglog<-c(C1_loglog,C2_loglog,C3_loglog,C4_loglog,C5_loglog,C6_loglog,C7_loglog,C8_loglog,C9_loglog,C10_loglog,C11_loglog,C12_loglog)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_loglog<-cbind(classes,allclass_loglog)
+
+
+
+#error_canham
+C1_canham<-((sum((C1$error_canham),na.rm = T)) )/C1_agb*100
+C2_canham<-((sum((C2$error_canham),na.rm = T)) )/C2_agb*100
+C3_canham<-((sum((C3$error_canham),na.rm = T)) )/C3_agb*100
+C4_canham<-((sum((C4$error_canham),na.rm = T)) )/C4_agb*100
+C5_canham<-((sum((C5$error_canham),na.rm = T)) )/C5_agb*100
+C6_canham<-((sum((C6$error_canham),na.rm = T)) )/C6_agb*100
+C7_canham<-((sum((C7$error_canham),na.rm = T)) )/C7_agb*100
+C8_canham<-((sum((C8$error_canham),na.rm = T)) )/C8_agb*100
+C9_canham<-((sum((C9$error_canham),na.rm = T)) )/C9_agb*100
+C10_canham<-((sum((C10$error_canham),na.rm = T)) )/C10_agb*100
+C11_canham<-((sum((C11$error_canham),na.rm = T)) )/C11_agb*100
+C12_canham<-((sum((C12$error_canham),na.rm = T)) )/C12_agb*100
+allclass_canham<-c(C1_canham,C2_canham,C3_canham,C4_canham,C5_canham,C6_canham,C7_canham,C8_canham,C9_canham,C10_canham,C11_canham,C12_canham)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_canham<-cbind(classes,allclass_canham)
+
+
+#error_wei2p
+C1_wei2p<-((sum((C1$error_wei2p),na.rm = T)) )/C1_agb*100
+C2_wei2p<-((sum((C2$error_wei2p),na.rm = T)) )/C2_agb*100
+C3_wei2p<-((sum((C3$error_wei2p),na.rm = T)) )/C3_agb*100
+C4_wei2p<-((sum((C4$error_wei2p),na.rm = T)) )/C4_agb*100
+C5_wei2p<-((sum((C5$error_wei2p),na.rm = T)) )/C5_agb*100
+C6_wei2p<-((sum((C6$error_wei2p),na.rm = T)) )/C6_agb*100
+C7_wei2p<-((sum((C7$error_wei2p),na.rm = T)) )/C7_agb*100
+C8_wei2p<-((sum((C8$error_wei2p),na.rm = T)) )/C8_agb*100
+C9_wei2p<-((sum((C9$error_wei2p),na.rm = T)) )/C9_agb*100
+C10_wei2p<-((sum((C10$error_wei2p),na.rm = T)) )/C10_agb*100
+C11_wei2p<-((sum((C11$error_wei2p),na.rm = T)) )/C11_agb*100
+C12_wei2p<-((sum((C12$error_wei2p),na.rm = T)) )/C12_agb*100
+allclass_wei2p<-c(C1_wei2p,C2_wei2p,C3_wei2p,C4_wei2p,C5_wei2p,C6_wei2p,C7_wei2p,C8_wei2p,C9_wei2p,C10_wei2p,C11_wei2p,C12_wei2p)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_wei2p<-cbind(classes,allclass_wei2p)
+
+
+
+#error_wei3p
+C1_wei3p<-((sum((C1$error_wei3p),na.rm = T)) )/C1_agb*100
+C2_wei3p<-((sum((C2$error_wei3p),na.rm = T)) )/C2_agb*100
+C3_wei3p<-((sum((C3$error_wei3p),na.rm = T)) )/C3_agb*100
+C4_wei3p<-((sum((C4$error_wei3p),na.rm = T)) )/C4_agb*100
+C5_wei3p<-((sum((C5$error_wei3p),na.rm = T)) )/C5_agb*100
+C6_wei3p<-((sum((C6$error_wei3p),na.rm = T)) )/C6_agb*100
+C7_wei3p<-((sum((C7$error_wei3p),na.rm = T)) )/C7_agb*100
+C8_wei3p<-((sum((C8$error_wei3p),na.rm = T)) )/C8_agb*100
+C9_wei3p<-((sum((C9$error_wei3p),na.rm = T)) )/C9_agb*100
+C10_wei3p<-((sum((C10$error_wei3p),na.rm = T)) )/C10_agb*100
+C11_wei3p<-((sum((C11$error_wei3p),na.rm = T)) )/C11_agb*100
+C12_wei3p<-((sum((C12$error_wei3p),na.rm = T)) )/C12_agb*100
+allclass_wei3p<-c(C1_wei3p,C2_wei3p,C3_wei3p,C4_wei3p,C5_wei3p,C6_wei3p,C7_wei3p,C8_wei3p,C9_wei3p,C10_wei3p,C11_wei3p,C12_wei3p)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_wei3p<-cbind(classes,allclass_wei3p)
+
+
+#error_gomp
+C1_gomp<-((sum((C1$error_gomp),na.rm = T)) )/C1_agb*100
+C2_gomp<-((sum((C2$error_gomp),na.rm = T)) )/C2_agb*100
+C3_gomp<-((sum((C3$error_gomp),na.rm = T)) )/C3_agb*100
+C4_gomp<-((sum((C4$error_gomp),na.rm = T)) )/C4_agb*100
+C5_gomp<-((sum((C5$error_gomp),na.rm = T)) )/C5_agb*100
+C6_gomp<-((sum((C6$error_gomp),na.rm = T)) )/C6_agb*100
+C7_gomp<-((sum((C7$error_gomp),na.rm = T)) )/C7_agb*100
+C8_gomp<-((sum((C8$error_gomp),na.rm = T)) )/C8_agb*100
+C9_gomp<-((sum((C9$error_gomp),na.rm = T)) )/C9_agb*100
+C10_gomp<-((sum((C10$error_gomp),na.rm = T)) )/C10_agb*100
+C11_gomp<-((sum((C11$error_gomp),na.rm = T)) )/C11_agb*100
+C12_gomp<-((sum((C12$error_gomp),na.rm = T)) )/C12_agb*100
+allclass_gomp<-c(C1_gomp,C2_gomp,C3_gomp,C4_gomp,C5_gomp,C6_gomp,C7_gomp,C8_gomp,C9_gomp,C10_gomp,C11_gomp,C12_gomp)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_gomp<-cbind(classes,allclass_gomp)
+
+
+
+#error_F11P
+C1_F11P<-((sum((C1$error_F11P),na.rm = T)) )/C1_agb*100
+C2_F11P<-((sum((C2$error_F11P),na.rm = T)) )/C2_agb*100
+C3_F11P<-((sum((C3$error_F11P),na.rm = T)) )/C3_agb*100
+C4_F11P<-((sum((C4$error_F11P),na.rm = T)) )/C4_agb*100
+C5_F11P<-((sum((C5$error_F11P),na.rm = T)) )/C5_agb*100
+C6_F11P<-((sum((C6$error_F11P),na.rm = T)) )/C6_agb*100
+C7_F11P<-((sum((C7$error_F11P),na.rm = T)) )/C7_agb*100
+C8_F11P<-((sum((C8$error_F11P),na.rm = T)) )/C8_agb*100
+C9_F11P<-((sum((C9$error_F11P),na.rm = T)) )/C9_agb*100
+C10_F11P<-((sum((C10$error_F11P),na.rm = T)) )/C10_agb*100
+C11_F11P<-((sum((C11$error_F11P),na.rm = T)) )/C11_agb*100
+C12_F11P<-((sum((C12$error_F11P),na.rm = T)) )/C12_agb*100
+allclass_F11P<-c(C1_F11P,C2_F11P,C3_F11P,C4_F11P,C5_F11P,C6_F11P,C7_F11P,C8_F11P,C9_F11P,C10_F11P,C11_F11P,C12_F11P)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_F11P<-cbind(classes,allclass_F11P)
+
+
+#error_F11E
+C1_F11E<-((sum((C1$error_F11E),na.rm = T)) )/C1_agb*100
+C2_F11E<-((sum((C2$error_F11E),na.rm = T)) )/C2_agb*100
+C3_F11E<-((sum((C3$error_F11E),na.rm = T)) )/C3_agb*100
+C4_F11E<-((sum((C4$error_F11E),na.rm = T)) )/C4_agb*100
+C5_F11E<-((sum((C5$error_F11E),na.rm = T)) )/C5_agb*100
+C6_F11E<-((sum((C6$error_F11E),na.rm = T)) )/C6_agb*100
+C7_F11E<-((sum((C7$error_F11E),na.rm = T)) )/C7_agb*100
+C8_F11E<-((sum((C8$error_F11E),na.rm = T)) )/C8_agb*100
+C9_F11E<-((sum((C9$error_F11E),na.rm = T)) )/C9_agb*100
+C10_F11E<-((sum((C10$error_F11E),na.rm = T)) )/C10_agb*100
+C11_F11E<-((sum((C11$error_F11E),na.rm = T)) )/C11_agb*100
+C12_F11E<-((sum((C12$error_F11E),na.rm = T)) )/C12_agb*100
+allclass_F11E<-c(C1_F11E,C2_F11E,C3_F11E,C4_F11E,C5_F11E,C6_F11E,C7_F11E,C8_F11E,C9_F11E,C10_F11E,C11_F11E,C12_F11E)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_F11E<-cbind(classes,allclass_F11E)
+
+
+#error_F12
+C1_F12<-((sum((C1$error_F12),na.rm = T)) )/C1_agb*100
+C2_F12<-((sum((C2$error_F12),na.rm = T)) )/C2_agb*100
+C3_F12<-((sum((C3$error_F12),na.rm = T)) )/C3_agb*100
+C4_F12<-((sum((C4$error_F12),na.rm = T)) )/C4_agb*100
+C5_F12<-((sum((C5$error_F12),na.rm = T)) )/C5_agb*100
+C6_F12<-((sum((C6$error_F12),na.rm = T)) )/C6_agb*100
+C7_F12<-((sum((C7$error_F12),na.rm = T)) )/C7_agb*100
+C8_F12<-((sum((C8$error_F12),na.rm = T)) )/C8_agb*100
+C9_F12<-((sum((C9$error_F12),na.rm = T)) )/C9_agb*100
+C10_F12<-((sum((C10$error_F12),na.rm = T)) )/C10_agb*100
+C11_F12<-((sum((C11$error_F12),na.rm = T)) )/C11_agb*100
+C12_F12<-((sum((C12$error_F12),na.rm = T)) )/C12_agb*100
+allclass_F12<-c(C1_F12,C2_F12,C3_F12,C4_F12,C5_F12,C6_F12,C7_F12,C8_F12,C9_F12,C10_F12,C11_F12,C12_F12)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_F12<-cbind(classes,allclass_F12)
+
+
+
+# error_F11A
+C1_F11A<-(((sum((C1$error_F11A),na.rm = T)) )/C1_agb*100 )
+C2_F11A<-(((sum((C2$error_F11A),na.rm = T)) )/C2_agb*100 )
+C3_F11A<-(((sum((C3$error_F11A),na.rm = T)) )/C3_agb*100 )
+C4_F11A<-(((sum((C4$error_F11A),na.rm = T)) )/C4_agb*100  )
+C5_F11A<-(((sum((C5$error_F11A),na.rm = T)) )/C5_agb*100 )
+C6_F11A<-(((sum((C6$error_F11A),na.rm = T)) )/C6_agb*100 )
+C7_F11A<-(((sum((C7$error_F11A),na.rm = T)) )/C7_agb*100 )
+C8_F11A<-(((sum((C8$error_F11A),na.rm = T)) )/C8_agb*100 )
+C9_F11A<-(((sum((C9$error_F11A),na.rm = T)) )/C9_agb*100 )
+C10_F11A<-(((sum((C10$error_F11A),na.rm = T)) )/C10_agb*100 )
+C11_F11A<-(((sum((C11$error_F11A),na.rm = T)) )/C11_agb*100 )
+C12_F11A<-(((sum((C12$error_F11A),na.rm = T)) )/C12_agb*100 )
+allclass_F11A<-c(C1_F11A,C2_F11A,C3_F11A,C4_F11A,C5_F11A,C6_F11A,C7_F11A,C8_F11A,C9_F11A,C10_F11A,C11_F11A,C12_F11A)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_F11A<-cbind(classes,allclass_F11A)
+
+
+#error_pwl
+C1_pwl<-((sum((C1$error_pwl),na.rm = T)) )/C1_agb*100
+C2_pwl<-((sum((C2$error_pwl),na.rm = T)) )/C2_agb*100
+C3_pwl<-((sum((C3$error_pwl),na.rm = T)) )/C3_agb*100
+C4_pwl<-((sum((C4$error_pwl),na.rm = T)) )/C4_agb*100
+C5_pwl<-((sum((C5$error_pwl),na.rm = T)) )/C5_agb*100
+C6_pwl<-((sum((C6$error_pwl),na.rm = T)) )/C6_agb*100
+C7_pwl<-((sum((C7$error_pwl),na.rm = T)) )/C7_agb*100
+C8_pwl<-((sum((C8$error_pwl),na.rm = T)) )/C8_agb*100
+C9_pwl<-((sum((C9$error_pwl),na.rm = T)) )/C9_agb*100
+C10_pwl<-((sum((C10$error_pwl),na.rm = T)) )/C10_agb*100
+C11_pwl<-((sum((C11$error_pwl),na.rm = T)) )/C11_agb*100
+C12_pwl<-((sum((C12$error_pwl),na.rm = T)) )/C12_agb*100
+allclass_pwl<-c(C1_pwl,C2_pwl,C3_pwl,C4_pwl,C5_pwl,C6_pwl,C7_pwl,C8_pwl,C9_pwl,C10_pwl,C11_pwl,C12_pwl)
+classes<-c(10,20,30,40,50,60,70,80,90,100,150,200)
+plot_pwl<-cbind(classes,allclass_pwl)
+
+
+
+########################
+##figure 3b MS #####
+####################
+
+plot(plot_lin, xlim=c(0,200), ylim=c(-100,100),xlab="DBH (cm)",ylab="Pond Error in AGB per DBH class", pch=20,col="red")
+lines (plot_lin,col="red")
+points(plot_loglin, pch=20,col="blue")
+lines (plot_loglin,col="blue")
+points(plot_loglog, pch=20,col="green")
+lines (plot_loglog,col="green")
+points(plot_pwl, pch=20,col="darkkhaki")
+lines (plot_pwl,col="darkkhaki")
+points(plot_wei2p, pch=20,col="yellow")
+lines (plot_wei2p,col="yellow")
+points(plot_wei3p, pch=20,col="cyan")
+lines (plot_wei3p,col="cyan")
+points(plot_gomp, pch=20,col="darkred")
+lines (plot_gomp,col="darkred")
+points(plot_F11E, pch=20,col="darkgreen")
+lines (plot_F11E,col="darkgreen")
+points(plot_F11A, pch=20,col="hotpink")
+lines (plot_F11A,col="hotpink")
+points(plot_F12, pch=20,col="purple")
+lines (plot_F12,col="purple")
+points(plot_F11P, pch=20,col="darkgrey")
+lines (plot_F11P,col="darkgrey")
+abline(0,0)
+classesM<-c(5,15,25,35,45,55,65,75,85,95,125,175)
+rug(classesM,col="grey")
+
+
+
+
+
+###############################################
+#6- erros in AGB - in 20 x 20 !
+###############################################
+
+
+FORESTplot<-read.table("actualforest.txt",h=T) #data of actual forest - actual DBH distribution
+
+brks<- exp(seq(-0.5, 6.5, by= 0.5))
+FORESTplot$DBHcat<- cut(FORESTplot$DBH, breaks= brks, right= F)
+FORESTDBHfreq<- table(FORESTplot$DBHcat)
+
+Hall$DBHcat<- cut(Hall$DBH, breaks= brks, right= F)
+Hallfreq<- table(Hall$DBHcat)
+
+sampfreq<- FORESTDBHfreq/ Hallfreq
+Hallfreq$sampfreq<- sampfreq[Hallfreq$DBHcat]
+
+
+Ntrees<- 1000 # number of desired trees to random sample
+Nsim<- 999  #number of simulations
+Neq<- 12 # Neq is number of DBH:H equations
+EstBiom<- matrix(NA, Nsim, Neq) 
+TrueBiom<- rep(NA, Nsim)
+for(i in 1: Nsim){
+   samp<- sample(1:nrow(Hall), size= Ntrees, replace= T, prob= Hall$sampfreq)
+                TrueBiom [i]<- sum(Hall$AGB[samp])
+                EstBiom[i,1]<- sum(Hall$AGB_lin[samp],na.rm = T)
+                EstBiom[i,2]<- sum(Hall$AGB_loglin[samp],na.rm = T)
+                EstBiom[i,3]<- sum(Hall$AGB_loglog[samp],na.rm = T)
+ 		EstBiom[i,4]<- sum(datagb$agb_pwl[samp],na.rm = T)
+                EstBiom[i,5]<- sum(Hall$AGB_canham[samp],na.rm = T)
+                EstBiom[i,6]<- sum(Hall$AGB_wei2p[samp],na.rm = T)
+                EstBiom[i,7]<- sum(Hall$AGB_wei3p[samp],na.rm = T)
+                EstBiom[i,8]<- sum(Hall$AGB_gomp[samp],na.rm = T)
+                EstBiom[i,9]<- sum(Hall$AGB_F11P[samp],na.rm = T)
+                EstBiom[i,10]<- sum(Hall$AGB_F11E[samp],na.rm = T)
+                EstBiom[i,11]<- sum(Hall$AGB_F12[samp],na.rm = T)
+                EstBiom[i,12]<- sum(Hall$AGB_F11A[samp],na.rm = T)
+}
+
+
+#figure 4
+boxplot(((EstBiom)/TrueBiom),outline=F, xlab="Equation number (ref. Table 1)",ylab="Estimated AGB / AGB",ylim=c(0,2))
+abline(1,0, col="grey")
+
+#######################
+
+
+
+#for contacting: alicialedo@gmail.com
+
+
+
+
